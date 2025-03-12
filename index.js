@@ -2,109 +2,77 @@ const fs = require('fs');
 const { google } = require('googleapis');
 require('dotenv').config();
 
-// Load client secrets from a file
-const scopes = process.env.SCOPES;
-const clientId = process.env.CLIENT_ID;
-const clientSecret = process.env.CLIENT_SECRET;
-const redirectUri = process.env.REDIRECT_URI;
-
+const SCOPES = process.env.SCOPES.split(' ');
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI;
 const TOKEN_PATH = 'token.json';
+const FILE_ID = process.env.FILE_ID;
+const NEW_OWNER_EMAIL = process.env.NEW_OWNER_EMAIL;
 
-// Set up OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
-  clientId,
-  clientSecret,
-  redirectUri
+  CLIENT_ID,
+  CLIENT_SECRET,
+  REDIRECT_URI
 );
 
-// Check if we have previously stored a token
-fs.readFile(TOKEN_PATH, (err, token) => {
-  if (err) return getAccessToken(oauth2Client);
+fs.readFile(TOKEN_PATH, async (err, token) => {
+  if (err) return getAccessToken();
+
   oauth2Client.setCredentials(JSON.parse(token));
-
-  const fileId = '1b-JIasSOGCgB7TsRPLDGBaGE1RjgVoY_';
-  const newOwnerEmail = 'cjcsantoceldes07@gmail.com';
-
-  //Once authenticated, log the capabilities by calling an API method
-  if (fileId && newOwnerEmail) {
-    initiateOwnershipTransfer(fileId, newOwnerEmail);
-  }
+  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+  transferOwnership(drive);
 });
 
-// Function to get access token if it's not stored
-function getAccessToken(oAuth2Client) {
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: scopes,
-  });
-  console.log('Authorize this app by visiting this url:', authUrl);
+function getAccessToken() {
+  console.log('🔑 No token found. Please authorize this app:');
+  console.log(
+    oauth2Client.generateAuthUrl({ access_type: 'offline', scope: SCOPES })
+  );
 }
 
-// Function to check Drive capabilities
-/**
- * Initiate ownership transfer by the current owner.
- * @param {string} fileId - The ID of the file you want to transfer ownership of.
- * @param {string} newOwnerEmail - The email address of the new prospective owner.
- */
-function initiateOwnershipTransfer(fileId, newOwnerEmail) {
-  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+async function transferOwnership(drive) {
+  try {
+    console.log(`🚀 Starting ownership transfer for file: ${FILE_ID}`);
 
-  // First, make the new owner a writer on the file
-  drive.permissions.create(
-    {
-      fileId: fileId,
+    const permission = await drive.permissions.create({
+      fileId: FILE_ID,
       requestBody: {
-        role: 'writer', // Temporarily set the new owner as a writer
-        type: 'user', // Type is 'user' for a specific person
-        emailAddress: newOwnerEmail, // New owner's email
+        role: 'writer',
+        type: 'user',
+        emailAddress: NEW_OWNER_EMAIL,
       },
       fields: 'id',
-      sendNotificationEmail: true, // Send an email to the prospective owner
-    },
-    (err, res) => {
-      if (err) {
-        console.error('Error creating writer permission:', err);
-        return;
-      }
-      const permissionId = res.data.id;
-      console.log(`Writer permission created. Permission ID: ${permissionId}`);
+      sendNotificationEmail: true,
+    });
 
-      // Next, update the permission to transfer ownership
-      drive.permissions.update(
-        {
-          fileId: fileId,
-          permissionId: permissionId, // Use the permission ID from the previous response
-          requestBody: {
-            role: 'writer',
-            pendingOwner: true, // make the new owner the pending owner
-          },
-          fields: 'id',
-        },
-        (err, res) => {
-          if (err) {
-            console.error('Error updating permission with pendingOwner:', err);
-            return;
-          }
-          console.log(
-            'Ownership transfer initiated with pendingOwner set to true.'
-          );
+    console.log(
+      `✅ Editor access granted to ${NEW_OWNER_EMAIL}. Proceeding with ownership transfer...`
+    );
 
-          // Now retrieve and verify the permissions to ensure pendingOwner is set
-          drive.permissions.list(
-            {
-              fileId: fileId,
-              fields: 'permissions(id, type, emailAddress, role, pendingOwner)',
-            },
-            (err, res) => {
-              if (err) {
-                console.error('Error retrieving permissions:', err);
-                return;
-              }
-              console.log('Permissions:', res.data.permissions);
-            }
-          );
-        }
+    await drive.permissions.update({
+      fileId: FILE_ID,
+      permissionId: permission.data.id,
+      requestBody: { role: 'writer', pendingOwner: true },
+      fields: 'id',
+    });
+
+    console.log(`🔄 Checking permissions to confirm transfer...`);
+
+    const { data } = await drive.permissions.list({
+      fileId: FILE_ID,
+      fields: 'permissions(emailAddress, pendingOwner)',
+    });
+
+    const pendingOwner = data.permissions.find((p) => p.pendingOwner);
+    if (pendingOwner) {
+      console.log(
+        `🎉 Ownership transfer initiated! ${pendingOwner.emailAddress} is now the pending owner.`
       );
+    } else {
+      console.log(`⚠️ No pending owner found. Please check the file settings.`);
     }
-  );
+  } catch (error) {
+    console.error('❌ Error:', error.response?.data || error.message);
+  }
 }
