@@ -19,11 +19,11 @@ oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
 async function transferOwnership() {
   try {
     console.log(
-      `🚀 Initiating transfer for ${NEW_OWNER_EMAIL} on file ${FILE_ID}...`
+      `Initiating transfer for ${NEW_OWNER_EMAIL} on file ${FILE_ID}...`
     );
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-    console.log(`🔄 Granting editor access to ${NEW_OWNER_EMAIL}...`);
+    console.log(`Granting editor access to ${NEW_OWNER_EMAIL}...`);
     const { data: permission } = await drive.permissions.create({
       fileId: FILE_ID,
       requestBody: {
@@ -35,14 +35,14 @@ async function transferOwnership() {
       sendNotificationEmail: true,
     });
 
-    console.log(`✅ Editor access granted. Requesting ownership transfer...`);
+    console.log(`Editor access granted. Requesting ownership transfer...`);
     await drive.permissions.update({
       fileId: FILE_ID,
       permissionId: permission.id,
       requestBody: { role: 'writer', pendingOwner: true },
     });
 
-    console.log(`🔍 Verifying ownership transfer...`);
+    console.log(`Verifying ownership transfer...`);
     const { data } = await drive.permissions.list({
       fileId: FILE_ID,
       fields: 'permissions(emailAddress, pendingOwner)',
@@ -51,15 +51,15 @@ async function transferOwnership() {
     const pendingOwner = data.permissions.find((p) => p.pendingOwner);
     if (pendingOwner) {
       console.log(
-        `🎉 Success! ${pendingOwner.emailAddress} is now the pending owner.`
+        `Success! ${pendingOwner.emailAddress} is now the pending owner.`
       );
     } else {
       console.log(
-        `⚠️ Transfer pending, but no pending owner detected. Please check manually.`
+        `Transfer pending, but no pending owner detected. Please check manually.`
       );
     }
   } catch (error) {
-    console.error(`❌ Transfer failed:`, error.response?.data || error.message);
+    console.error(`Transfer failed:`, error.response?.data || error.message);
   }
 }
 
